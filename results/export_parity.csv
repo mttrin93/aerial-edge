@@ -1,0 +1,3 @@
+variant,runtime,size_mb,map50,map50_95,images,max_abs_diff_box_px,max_abs_diff_score
+FP32,PyTorch,5.38,0.3378,0.1879,16,0.01104736328125,8.463859558105469e-06
+FP32,ONNX Runtime,9.8,0.3378,0.1879,16,0.01104736328125,8.463859558105469e-06

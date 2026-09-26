@@ -144,6 +144,24 @@ What the run shows:
   from 0.187 to 0.185-0.186 afterwards. On VisDrone mosaic probably keeps helping to the end, since
   it shows many small objects per batch; `close_mosaic=0` is worth a try in a later run.
 
+## ONNX export and parity (step 4)
+
+`scripts/export.py` exports `models/best.pt` to ONNX (opset 17, static 640x640, settings in
+`configs/export.yaml`) and checks it against PyTorch; numbers in
+[`results/export_parity.csv`](results/export_parity.csv).
+
+- **Raw outputs match**: on 16 val images the max abs difference is 0.011 px on box coordinates and
+  8e-6 on class scores (float32 rounding).
+- **Val mAP is identical**: mAP50 0.3378, mAP50-95 0.1879 for both, with the same settings (batch 1,
+  square input, `max_det=500`, CPU).
+- These differ slightly from the Colab numbers (0.342 / 0.187) because an ONNX model with a static
+  input runs on square letterboxed images, while training val uses rectangular batches. From here on
+  every variant is compared under the square-input settings.
+- The export uses YOLO26's one-to-many head with NMS afterwards (Ultralytics' default `nms=None`),
+  the same head the training val measured. The NMS-free one-to-one head (`nms=False`) is an option
+  for later.
+- `best.pt` is 5.4 MB because Ultralytics stores weights in FP16; the ONNX model is 9.8 MB in FP32.
+
 ## Results
 
 _TBD._
