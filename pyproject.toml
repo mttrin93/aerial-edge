@@ -17,6 +17,7 @@ dependencies = [
     "tabulate==0.10.0",
     "matplotlib==3.11.2",
     "pillow==12.3.0",
+    "mlflow==3.16.1",
 ]
 
 [project.optional-dependencies]

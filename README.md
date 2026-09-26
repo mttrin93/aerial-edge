@@ -27,10 +27,11 @@ uv pip install -e ".[dev]"
 ```
 
 The laptop install pulls CPU-only torch wheels (see `[tool.uv.sources]` in `pyproject.toml`).
-On Colab, keep the preinstalled CUDA torch and install only the pinned Ultralytics:
+On Colab, keep the preinstalled CUDA torch and install only what training needs:
 
 ```bash
-pip install ultralytics==8.4.163
+pip install ultralytics==8.4.163 mlflow==3.16.1
+export PYTHONPATH=$PWD/src   # instead of `pip install -e .`, whose Python pin may not match Colab
 ```
 
 Get the data (~2 GB download, 3.7 GB on disk) and run the EDA:
@@ -67,6 +68,43 @@ image: 902), against about 7 in COCO.
 keep the same `max_det` for every variant so mAP numbers stay comparable.
 
 ![Objects per image](results/eda_objects_per_image.png)
+
+## Baseline training (Colab)
+
+Open [`notebooks/train_colab.ipynb`](notebooks/train_colab.ipynb) in Colab (File > Open notebook >
+GitHub, or upload it) and run the cells: it clones this repo, installs, downloads the data, and
+runs the commands below. Set `REPO_URL` in cell 3 to your repo.
+
+`scripts/train.py` passes `configs/train.yaml` to `YOLO.train()`; any `key=value` argument
+overrides the config. On Colab, smoke test first, then the full run (do not train on the laptop:
+even the smoke test freezes it):
+
+```bash
+python scripts/train.py epochs=1 fraction=0.01
+```
+
+On Colab the VM disk disappears on disconnect, so weights go to Google Drive and training can
+resume from `last.pt`. MLflow uses a local SQLite DB (SQLite on a Drive mount is unreliable),
+and `--backup-mlflow` copies it to Drive at the start of every epoch and once more at the end:
+
+```bash
+D=/content/drive/MyDrive/aerial-edge
+export MLFLOW_TRACKING_URI=sqlite:////content/mlflow.db
+python scripts/train.py project=$D/runs --backup-mlflow /content/mlflow.db $D/mlflow.db
+
+# after a disconnect: restore the DB, then resume
+cp $D/mlflow.db /content/mlflow.db
+python scripts/train.py --resume $D/runs/yolo26n_640/weights/last.pt \
+    --backup-mlflow /content/mlflow.db $D/mlflow.db
+```
+
+Without `MLFLOW_TRACKING_URI`, the script logs to `mlflow/mlflow.db` in the repo (git-ignored).
+To browse the Colab runs on the laptop, copy `mlflow.db` from Drive into `mlflow/` and run
+`mlflow ui --backend-store-uri sqlite:///mlflow/mlflow.db`.
+
+Note: at train time Ultralytics 8.4.163 raises `max_det` to the densest image in the data (902),
+so its val mAP is not capped at 300 detections. Later steps must set `max_det` explicitly, to the
+same value for every variant.
 
 ## Results
 

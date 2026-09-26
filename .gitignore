@@ -25,3 +25,8 @@ results/*
 
 # Notebooks
 .ipynb_checkpoints/
+
+# MLflow tracking data (local DB, or copied from Google Drive)
+mlflow/
+mlruns/
+*.db
