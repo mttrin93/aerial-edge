@@ -11,7 +11,20 @@ max_det: 500
 
 calibration:
   split: train          # never calibrate on val/test
-  num_images: 300
+  num_images: 300       # random sample, drawn with `seed`
+  method: MinMax        # MinMax, Entropy or Percentile
+
+quantize:
+  op_types: [Conv, MatMul]  # compute-heavy ops; SiLU, decode and NMS inputs stay float
+  per_channel: true         # one scale per output channel of each conv weight
+  activation_type: QUInt8
+  weight_type: QInt8
+  # No VNNI on this CPU: ORT's U8S8 kernels use VPMADDUBSW, which saturates. 7-bit weights avoid
+  # it: static INT8 mAP50-95 -25% -> -9% (results/quantization_experiments.csv). Applied to static
+  # INT8 only; dynamic INT8 gets worse with it (-12% -> -36%).
+  reduce_range: true
+  # The six final head convs (box and class outputs), kept in float32
+  exclude: ['/model\.23/cv[23]\.\d/cv[23]\.\d\.2/Conv']
 
 benchmark:
   warmup: 20

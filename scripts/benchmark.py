@@ -22,12 +22,14 @@ import platform
 import resource
 import time
 from pathlib import Path
+from queue import Empty
 
 import numpy as np
 import yaml
 from tabulate import tabulate
 
-from aerial_edge.paths import CONFIGS, DATA_YAML, MODELS, RESULTS
+from aerial_edge.inference import preprocess, split_images
+from aerial_edge.paths import CONFIGS, MODELS, RESULTS
 
 
 def describe(path: Path) -> tuple[str, str]:
@@ -39,10 +41,8 @@ def describe(path: Path) -> tuple[str, str]:
 
 def load_images(n: int) -> list[np.ndarray]:
     import cv2
-    from ultralytics.data.utils import check_det_dataset
 
-    val_dir = Path(check_det_dataset(DATA_YAML)["val"])
-    return [cv2.imread(str(p)) for p in sorted(val_dir.glob("*.jpg"))[:n]]
+    return [cv2.imread(str(p)) for p in split_images("val")[:n]]
 
 
 def peak_rss_mb() -> float:
@@ -52,18 +52,12 @@ def peak_rss_mb() -> float:
 def run_one(path: Path, cfg: dict, queue: mp.Queue) -> None:
     """Benchmark one model; runs in a child process and puts its stats on the queue."""
     import torch
-    from ultralytics.data.augment import LetterBox
     from ultralytics.utils.nms import non_max_suppression
 
     bench = cfg["benchmark"]
     threads = bench["intra_op_threads"]
     torch.set_num_threads(threads)
-    letterbox = LetterBox((cfg["imgsz"], cfg["imgsz"]), auto=False)
     images = load_images(bench["images"])
-
-    def preprocess(image: np.ndarray) -> np.ndarray:
-        x = letterbox(image=image)[None, ..., ::-1].transpose(0, 3, 1, 2)
-        return np.ascontiguousarray(x, dtype=np.float32) / 255
 
     rss_before = peak_rss_mb()
     if path.suffix == ".pt":
@@ -97,7 +91,7 @@ def run_one(path: Path, cfg: dict, queue: mp.Queue) -> None:
     for i in range(bench["warmup"] + bench["runs"]):
         image = images[i % len(images)]
         t0 = time.perf_counter()
-        x = preprocess(image)
+        x = preprocess(image, cfg["imgsz"])
         t1 = time.perf_counter()
         y = infer(x)
         t2 = time.perf_counter()
@@ -141,7 +135,13 @@ def main() -> None:
         queue = ctx.Queue()
         process = ctx.Process(target=run_one, args=(path, cfg, queue))
         process.start()
-        stats = queue.get()
+        while True:  # a crashed child never puts anything on the queue: do not wait forever
+            try:
+                stats = queue.get(timeout=5)
+                break
+            except Empty:
+                if not process.is_alive():
+                    raise RuntimeError(f"{path.name}: benchmark process died") from None
         process.join()
 
         t = stats["times"]

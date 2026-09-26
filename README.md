@@ -198,18 +198,69 @@ in its own process; 4 threads, 20 warmup + 200 timed runs cycling over 20 val im
 
 | Runtime | Pre p50 | Infer p50 | Infer p95 | NMS p50 | **Total p50** | **Total p95** | Peak mem |
 |---------|--------:|----------:|----------:|--------:|--------------:|--------------:|---------:|
-| PyTorch | 3.6 ms | 85.4 ms | 106.2 ms | 5.0 ms | **94.6 ms** | **115.8 ms** | 84 MB |
-| ONNX Runtime | 3.8 ms | 45.6 ms | 58.6 ms | 6.7 ms | **57.3 ms** | **80.1 ms** | 151 MB |
+| PyTorch | 4.1 ms | 79.6 ms | 86.5 ms | 5.1 ms | **89.0 ms** | **98.8 ms** | 87 MB |
+| ONNX Runtime | 3.8 ms | 41.0 ms | 47.5 ms | 6.9 ms | **51.8 ms** | **65.2 ms** | 150 MB |
 
 - **ONNX Runtime runs inference about 1.9x faster than PyTorch** on this CPU, at identical mAP
-  (step 4); end to end the gain is 1.65x, because preprocessing and NMS do not get faster.
-- **NMS is about 10% of the ONNX pipeline** (about 40 boxes per image survive conf 0.25). As
+  (step 4); end to end the gain is 1.7x, because preprocessing and NMS do not get faster.
+- **NMS is about 13% of the ONNX pipeline** (about 40 boxes per image survive conf 0.25). As
   inference gets faster with quantization, NMS becomes a larger share, which is what makes
   YOLO26's NMS-free head interesting later.
 - **Peak memory is higher for ONNX Runtime** (its memory arena pre-allocates buffers), not the
   model weights: both models are under 10 MB on disk.
-- **Run-to-run noise is about 10%** on this laptop (turbo boost, background load): a repeated run
-  gave 41 ms instead of 46 ms ONNX inference. Differences smaller than that are not meaningful.
+- **Run-to-run noise is about 10%** on this laptop (turbo boost, background load): repeated runs
+  gave 41 to 46 ms ONNX inference. Differences smaller than that are not meaningful.
+
+## Quantization (step 6)
+
+`scripts/quantize.py` turns `best.onnx` into three variants; `scripts/evaluate.py` measures val mAP
+per variant and per class ([`results/evaluate.csv`](results/evaluate.csv)), and
+`scripts/benchmark.py` times them. Settings in the `calibration` and `quantize` sections of
+`configs/export.yaml`.
+
+- **FP16**: weights and activations in float16 (input and output stay float32).
+- **INT8 dynamic**: int8 weights; each activation's range is measured at run time, per image.
+- **INT8 static**: int8 weights and activations; ranges fixed beforehand by calibration on 300
+  random **train** images (never val or test), QDQ format.
+
+| Variant | Size | mAP50-95 | Δ mAP50-95 | Infer p50 | Total p50 |
+|---------|-----:|---------:|-----------:|----------:|----------:|
+| FP32 | 9.8 MB | 0.188 | | 41.0 ms | 51.8 ms |
+| FP16 | 4.9 MB | 0.188 | -0.1% | 48.7 ms | 61.7 ms |
+| INT8 dynamic | 2.8 MB | 0.166 | -11.5% | 193.3 ms | 209.3 ms |
+| INT8 static | 3.0 MB | 0.174 | -7.4% | 62.6 ms | 73.2 ms |
+
+**Accuracy**
+
+- **FP16 is lossless** (-0.1%) and halves the file.
+- **Static INT8 first lost 25%**, far more than the 1-3% usual for YOLO. The cause is overflow:
+  this CPU has no VNNI, so ONNX Runtime's int8 kernels use an instruction (VPMADDUBSW) that
+  saturates on large values. Large vehicles, with large activations, suffered most (truck
+  mAP50-95 0.19 -> 0.09). 7-bit weights (`reduce_range`) avoid the overflow: -25% -> -9%. Keeping
+  the six final head convs (box and class outputs) in float32 adds a little: -7.4%. Keeping the
+  head in float32 alone did almost nothing (-24%), so the head was not the problem. All runs in
+  [`results/quantization_experiments.csv`](results/quantization_experiments.csv).
+- **Dynamic INT8 loses 11.5%**, and `reduce_range` makes it worse (-36%), so it keeps full 8-bit
+  weights.
+
+**Speed: nothing beats FP32 on this CPU**
+
+- **FP16 is about 20% slower**: the i7-8550U has no float16 arithmetic, so ONNX Runtime converts
+  back to float32 around most ops.
+- **Dynamic INT8 is 4x slower**: measuring and quantizing the activations of every conv, for every
+  image, costs more than the int8 math saves. It is meant for matmul-heavy models (transformers),
+  not CNNs.
+- **Static INT8 is about 40% slower**: without VNNI, int8 convolutions are not faster than
+  ONNX Runtime's well-tuned float32 kernels, and the float SiLU activations between convs add a
+  quantize and dequantize step around every conv.
+
+**What this means for the edge.** The result is specific to this laptop CPU. INT8 pays off on
+hardware with int8 dot-product instructions or accelerators (Intel VNNI/AMX, ARM dot-product
+cores such as Raspberry Pi 5, Jetson with TensorRT, NPUs), and FP16 on GPUs and Jetson. There the
+size win (3.3x smaller for static INT8) comes with a speed win too; the 7.4% accuracy cost should
+be re-measured on the target, since overflow behaviour depends on the kernels. Per class, static
+INT8 loses most on tiny and rare classes (bicycle -16%, people -11%, motor -12%), as the EDA
+predicted.
 
 ## Results
 
@@ -218,8 +269,15 @@ End-to-end CPU latency per image (Intel i7-8550U, 4 threads, batch 1); mAP on va
 
 | Variant | Runtime | Size (MB) | mAP50 | mAP50-95 | p50 (ms) | p95 (ms) |
 |---------|---------|-----------|-------|----------|----------|----------|
-| FP32 | PyTorch | 5.4 | 0.338 | 0.188 | 94.6 | 115.8 |
-| FP32 | ONNX Runtime | 9.8 | 0.338 | 0.188 | 57.3 | 80.1 |
+| FP32 | PyTorch | 5.4 | 0.338 | 0.188 | 89.0 | 98.8 |
+| FP32 | ONNX Runtime | 9.8 | 0.338 | 0.188 | **51.8** | **65.2** |
+| FP16 | ONNX Runtime | 4.9 | 0.338 | 0.188 | 61.7 | 89.6 |
+| INT8 dynamic | ONNX Runtime | 2.8 | 0.311 | 0.166 | 209.3 | 233.9 |
+| INT8 static | ONNX Runtime | 3.0 | 0.320 | 0.174 | 73.2 | 85.7 |
+
+On this CPU the FP32 ONNX model is the best choice: quantization shrinks the file but makes
+nothing faster, and INT8 costs accuracy. See step 6 for why, and what would change on other
+hardware.
 
 ## Hardware
 

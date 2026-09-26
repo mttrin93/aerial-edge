@@ -1,3 +1,6 @@
 variant,runtime,file,size_mb,pre_p50_ms,infer_p50_ms,infer_p95_ms,nms_p50_ms,total_p50_ms,total_p95_ms,boxes_per_image,peak_mem_mb,threads
-FP32,PyTorch,best.pt,5.38,3.58,85.36,106.16,5.04,94.59,115.75,39.9,83.5,4
-FP32,ONNX Runtime,best.onnx,9.8,3.84,45.62,58.55,6.7,57.34,80.11,39.9,150.9,4
+FP32,PyTorch,best.pt,5.38,4.09,79.59,86.45,5.14,89.02,98.78,39.9,86.6,4
+FP32,ONNX Runtime,best.onnx,9.8,3.8,41.0,47.45,6.87,51.79,65.19,39.9,150.4,4
+FP16,ONNX Runtime,best_fp16.onnx,4.94,3.92,48.73,69.32,7.43,61.7,89.55,40.0,165.3,4
+INT8 DYNAMIC,ONNX Runtime,best_int8_dynamic.onnx,2.83,3.94,193.31,214.61,11.07,209.25,233.86,59.8,140.7,4
+INT8 STATIC,ONNX Runtime,best_int8_static.onnx,2.99,3.51,62.55,67.6,6.53,73.24,85.7,41.5,149.3,4

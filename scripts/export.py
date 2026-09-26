@@ -23,28 +23,18 @@ import onnxruntime as ort
 import torch
 import yaml
 from ultralytics import YOLO
-from ultralytics.data.augment import LetterBox
-from ultralytics.data.utils import check_det_dataset
 
-from aerial_edge.paths import CONFIGS, DATA_YAML, MODELS, RESULTS
+from aerial_edge.inference import preprocess, split_images, val_metrics
+from aerial_edge.paths import CONFIGS, MODELS, RESULTS
 
 PARITY_IMAGES = 16
 
 
-def letterbox_batch(paths: list[Path], imgsz: int) -> np.ndarray:
-    """Preprocess images like Ultralytics: letterbox to imgsz, BGR->RGB, CHW, float in [0, 1]."""
-    import cv2
-
-    letterbox = LetterBox((imgsz, imgsz), auto=False)
-    images = [letterbox(image=cv2.imread(str(p))) for p in paths]
-    x = np.stack(images)[..., ::-1].transpose(0, 3, 1, 2)
-    return np.ascontiguousarray(x, dtype=np.float32) / 255
-
-
 def parity(pt_path: Path, onnx_path: Path, cfg: dict) -> dict:
     """Max abs difference between PyTorch and ONNX Runtime outputs on a few val images."""
-    val_dir = Path(check_det_dataset(DATA_YAML)["val"])
-    paths = sorted(val_dir.glob("*.jpg"))[:PARITY_IMAGES]
+    import cv2
+
+    paths = split_images("val")[:PARITY_IMAGES]
 
     model = YOLO(pt_path).model.fuse().eval()
     session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
@@ -52,7 +42,7 @@ def parity(pt_path: Path, onnx_path: Path, cfg: dict) -> dict:
 
     box_diff = score_diff = 0.0
     for path in paths:
-        x = letterbox_batch([path], cfg["imgsz"])
+        x = preprocess(cv2.imread(str(path)), cfg["imgsz"])
         with torch.no_grad():
             y_pt = model(torch.from_numpy(x))
         y_pt = (y_pt[0] if isinstance(y_pt, (list, tuple)) else y_pt).numpy()
@@ -66,21 +56,6 @@ def parity(pt_path: Path, onnx_path: Path, cfg: dict) -> dict:
         "max_abs_diff_box_px": box_diff,
         "max_abs_diff_score": score_diff,
     }
-
-
-def val_map(weights: Path, cfg: dict) -> tuple[float, float]:
-    metrics = YOLO(weights, task="detect").val(
-        data=DATA_YAML,
-        split="val",
-        imgsz=cfg["imgsz"],
-        batch=1,
-        rect=False,
-        max_det=cfg["max_det"],
-        device="cpu",
-        plots=False,
-        verbose=False,
-    )
-    return metrics.box.map50, metrics.box.map
 
 
 def main() -> None:
@@ -119,8 +94,8 @@ def main() -> None:
             "size_mb": round(path.stat().st_size / 1e6, 2),
         }
         if not args.skip_val:
-            map50, map50_95 = val_map(path, cfg)
-            row |= {"map50": round(map50, 4), "map50_95": round(map50_95, 4)}
+            box = val_metrics(path, cfg["imgsz"], cfg["max_det"]).box
+            row |= {"map50": round(box.map50, 4), "map50_95": round(box.map, 4)}
         rows.append(row)
 
     print()
