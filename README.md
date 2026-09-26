@@ -106,6 +106,44 @@ Note: at train time Ultralytics 8.4.163 raises `max_det` to the densest image in
 so its val mAP is not capped at 300 detections. Later steps must set `max_det` explicitly, to the
 same value for every variant.
 
+### Baseline result
+
+YOLO26n, 640 px, 100 epochs, batch 16, on a Tesla T4: 4.6 h (about 2.5 min per epoch). The best
+checkpoint (by fitness, 0.1·mAP50 + 0.9·mAP50-95) is from epoch 90.
+
+| Split | P | R | mAP50 | mAP50-95 |
+|-------|---|---|-------|----------|
+| val (548 images, 38,759 boxes) | 0.462 | 0.354 | **0.342** | **0.187** |
+
+Per class (val):
+
+| Class | Boxes | mAP50 | mAP50-95 |
+|-------|------:|------:|---------:|
+| car | 14,064 | 0.751 | 0.495 |
+| bus | 251 | 0.451 | 0.289 |
+| motor | 4,886 | 0.405 | 0.164 |
+| pedestrian | 8,844 | 0.374 | 0.155 |
+| van | 1,975 | 0.368 | 0.242 |
+| truck | 750 | 0.308 | 0.189 |
+| people | 5,125 | 0.293 | 0.099 |
+| tricycle | 1,045 | 0.232 | 0.124 |
+| awning-tricycle | 532 | 0.129 | 0.076 |
+| bicycle | 1,287 | 0.106 | 0.040 |
+
+What the run shows:
+
+- **In line with published nano baselines** on VisDrone at 640 (YOLOv8n / YOLO11n: mAP50 about
+  0.33-0.35, mAP50-95 about 0.19-0.20).
+- **Recall is the weak side** (0.35 against 0.46 precision): the model misses tiny objects more than
+  it invents them, as the EDA predicts. The worst classes are the smallest or rarest (bicycle,
+  awning-tricycle) and `people`, which is easy to confuse with `pedestrian`.
+- **The curve flattens around epoch 60-70.** Val mAP50-95: 0.139 at epoch 10, 0.176 at 40, 0.183
+  at 60, 0.187 at 90. About 60 epochs would give nearly the same model in half the time; more
+  epochs will not help, resolution and model size are the levers left.
+- **Turning mosaic off for the last 10 epochs (`close_mosaic=10`) did not help**: mAP50-95 dipped
+  from 0.187 to 0.185-0.186 afterwards. On VisDrone mosaic probably keeps helping to the end, since
+  it shows many small objects per batch; `close_mosaic=0` is worth a try in a later run.
+
 ## Results
 
 _TBD._
@@ -117,7 +155,7 @@ _TBD._
 
 | Role | Device |
 |------|--------|
-| Training | _TBD (Colab GPU)_ |
+| Training | NVIDIA Tesla T4, 15 GB (Google Colab) |
 | CPU benchmarks | Intel Core i7-8550U (4 cores / 8 threads, AVX2, no VNNI), Linux |
 
 ## License
