@@ -1,0 +1,10 @@
+# Baseline training (step 3). Passed straight to ultralytics YOLO.train().
+model: yolo26n.pt
+data: VisDrone.yaml
+epochs: 100
+imgsz: 640
+batch: 16
+seed: 0
+deterministic: true
+project: runs/visdrone
+name: yolo26n_640

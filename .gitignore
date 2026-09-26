@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.ruff_cache/
+.pytest_cache/
+
+# Data and artifacts (too big for git)
+datasets/
+runs/
+models/*
+!models/.gitkeep
+*.pt
+*.onnx
+*.engine
+*.cache
+
+# Results: keep the summary tables, ignore raw dumps
+results/*
+!results/.gitkeep
+!results/*.md
+!results/*.csv
+
+# Notebooks
+.ipynb_checkpoints/

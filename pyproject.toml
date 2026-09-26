@@ -1,0 +1,41 @@
+[project]
+name = "aerial-edge"
+version = "0.1.0"
+description = "YOLO on VisDrone: ONNX export, FP32/FP16/INT8 comparison of mAP and latency on the edge"
+readme = "README.md"
+requires-python = "==3.12.*"
+dependencies = [
+    "torch==2.14.0",
+    "torchvision==0.29.0",
+    "ultralytics==8.4.163",
+    "onnx==1.23.0",
+    "onnxruntime==1.30.0",
+    "onnxconverter-common==1.16.0",
+    "onnxslim==0.1.96",
+    "numpy==2.5.3",
+    "opencv-python-headless==5.0.0.93",
+    "tabulate==0.10.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "ruff==0.16.9"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aerial_edge"]
+
+# Laptop has no NVIDIA GPU: pull the CPU-only torch wheels (much smaller).
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.ruff]
+line-length = 100
