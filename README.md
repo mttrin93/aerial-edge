@@ -144,6 +144,32 @@ What the run shows:
   from 0.187 to 0.185-0.186 afterwards. On VisDrone mosaic probably keeps helping to the end, since
   it shows many small objects per batch; `close_mosaic=0` is worth a try in a later run.
 
+### What the model finds and misses
+
+`scripts/predict_example.py` runs `best.pt` on one val image (63 objects) and draws the ground truth
+next to the predictions at conf >= 0.25, plus an error map that colours every ground-truth box by
+what the model did with it (IoU >= 0.5, the mAP50 matching rule).
+
+![Ground truth vs prediction](results/prediction_example.png)
+
+![Found and missed objects](results/prediction_errors.png)
+
+| Outcome | Objects |
+|---------|--------:|
+| found (same class, conf >= 0.25) | 32 |
+| found only below conf 0.25 | 10 |
+| right place, wrong class | 6 |
+| missed | 15 |
+
+- **Most misses are tiny, distant people**: 9 of 10 `people` and 5 of 23 `pedestrian` are missed,
+  nearly all at the top of the frame, where a person is 5-10 px tall, about one cell of the finest
+  (stride-8) grid.
+- **Confusions are between look-alike classes from above**: truck as tricycle or van, bicycle as
+  pedestrian (a rider looks like a person).
+- **Cars and nearby pedestrians are solid** (car: 18 of 18 found at some confidence).
+- **Some "false positives" are real objects**: parked motorbikes on the left sidewalk are detected
+  but not labelled (VisDrone marks crowded areas as ignored regions), so mAP counts them as errors.
+
 ## ONNX export and parity (step 4)
 
 `scripts/export.py` exports `models/best.pt` to ONNX (opset 17, static 640x640, settings in
