@@ -18,3 +18,6 @@ benchmark:
   runs: 200
   batch: 1
   intra_op_threads: 4   # fixed so results are comparable across variants
+  images: 20            # val images cycled through, so NMS sees realistic crowding
+  conf: 0.25            # deployment threshold for NMS (val uses 0.001, far more boxes)
+  iou: 0.7              # NMS IoU threshold, Ultralytics default

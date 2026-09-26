@@ -188,12 +188,38 @@ what the model did with it (IoU >= 0.5, the mAP50 matching rule).
   for later.
 - `best.pt` is 5.4 MB because Ultralytics stores weights in FP16; the ONNX model is 9.8 MB in FP32.
 
+## Latency benchmark (step 5)
+
+`scripts/benchmark.py` times the whole CPU pipeline per image, from the raw val image to final
+boxes, in three stages: preprocessing (letterbox to 640), inference, and NMS (conf 0.25, iou 0.7).
+The ONNX graph ends before NMS, so inference alone would understate the real cost. Each model runs
+in its own process; 4 threads, 20 warmup + 200 timed runs cycling over 20 val images. Numbers in
+[`results/benchmark.csv`](results/benchmark.csv).
+
+| Runtime | Pre p50 | Infer p50 | Infer p95 | NMS p50 | **Total p50** | **Total p95** | Peak mem |
+|---------|--------:|----------:|----------:|--------:|--------------:|--------------:|---------:|
+| PyTorch | 3.6 ms | 85.4 ms | 106.2 ms | 5.0 ms | **94.6 ms** | **115.8 ms** | 84 MB |
+| ONNX Runtime | 3.8 ms | 45.6 ms | 58.6 ms | 6.7 ms | **57.3 ms** | **80.1 ms** | 151 MB |
+
+- **ONNX Runtime runs inference about 1.9x faster than PyTorch** on this CPU, at identical mAP
+  (step 4); end to end the gain is 1.65x, because preprocessing and NMS do not get faster.
+- **NMS is about 10% of the ONNX pipeline** (about 40 boxes per image survive conf 0.25). As
+  inference gets faster with quantization, NMS becomes a larger share, which is what makes
+  YOLO26's NMS-free head interesting later.
+- **Peak memory is higher for ONNX Runtime** (its memory arena pre-allocates buffers), not the
+  model weights: both models are under 10 MB on disk.
+- **Run-to-run noise is about 10%** on this laptop (turbo boost, background load): a repeated run
+  gave 41 ms instead of 46 ms ONNX inference. Differences smaller than that are not meaningful.
+
 ## Results
 
-_TBD._
+End-to-end CPU latency per image (Intel i7-8550U, 4 threads, batch 1); mAP on val with square
+640 input and `max_det=500`.
 
 | Variant | Runtime | Size (MB) | mAP50 | mAP50-95 | p50 (ms) | p95 (ms) |
 |---------|---------|-----------|-------|----------|----------|----------|
+| FP32 | PyTorch | 5.4 | 0.338 | 0.188 | 94.6 | 115.8 |
+| FP32 | ONNX Runtime | 9.8 | 0.338 | 0.188 | 57.3 | 80.1 |
 
 ## Hardware
 
